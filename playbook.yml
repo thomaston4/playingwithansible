@@ -1,0 +1,91 @@
+---
+
+- hosts: all
+  become: true
+  gather_facts: true
+  tasks:
+
+#Creates a user and sets a password
+  - name: create new user
+    ansible.builtin.user:
+      name: newuser1
+      password: "{{ 'password' | password_hash('sha512', 'mysecretsalt') }}"
+      groups: root
+      state: "present"
+      shell: "/bin/bash"
+      system: false
+      create_home: true
+      home: "/root/users"
+      generate_ssh_key: true
+
+# Install Apache and PHP
+  - name: installing apache
+    ansible.builtin.yum:
+      name: httpd
+      state: latest
+
+  - name: installing PHP
+    yum:
+      name: php
+      state: installed
+
+# Start and enable apache at boot
+  - name: Ensure that apache2 is started
+    become: true
+    service: name=httpd state=started
+
+# write a PHP script that can be viewed by putting your server's IP Address in web browser
+  - name: copying the php file
+    copy:
+      src: /root/intershop/index.php
+      dest: /var/www/html/index.html
+      force: yes
+
+#  output your last name and date stamp with timezone
+  - command: "date '+%Y-%m-%d %H:%M:%S'"
+    register: date_cest
+    environment:
+      TZ: Europe/Albania
+
+  - command: "date '+%Y-%m-%d %H:%M:%S'"
+    register: date_aest
+    environment:
+      TZ: Australia/Brisbane
+
+  - debug:
+      msg: "Ton, AEST {{ date_aest.stdout }}, CEST {{ date_cest.stdout }}"
+    
+# add 4GB of Swap Space
+  - name: Check whether "/swapfile" exists
+    register: idCheckSwap
+    stat:
+      path: /swapfile
+
+  - name: Fail it if "/swapfile" exists
+    fail:
+      msg: Swap file exists
+    when: idCheckSwap.stat.exists == true
+
+  - name: Allocate the swap file
+    shell: fallocate -l 4G /swapfile
+
+  - name: Change permission of the swap file
+    file:
+      path: /swapfile
+      mode: 600
+  
+  - name: Create a swap area on the swap file
+    shell: mkswap /swapfile
+  
+  - name: Activate the swap file as a swap memory
+    shell: swapon /swapfile
+  
+  - name: Append configuration in /etc/fstab
+    shell: echo "\n/swapfile swap swap defaults 0 0\n" >> /etc/fstab
+  
+  - name: Set swappiness level
+    shell: sysctl vm.swappiness=60
+  
+  - name: Append configuration in /etc/sysctl.conf
+    shell: echo "\nvm.swappiness=60\n" >> /etc/sysctl.conf
+
